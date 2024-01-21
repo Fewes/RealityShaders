@@ -269,10 +269,11 @@ PS2FB PS_StaticMesh(VS2PS Input)
 
 	// Prepare lighting data
 	ColorPair Light = ComputeLights(WorldNormal, WorldLightDir, WorldViewDir, SpecularExponent);
-	float3 DiffuseRGB = (Light.Diffuse * Lights[0].color.rgb);
-	float3 SpecularRGB = (Light.Specular * Gloss) * StaticSpecularColor.rgb;
 
 	#if _POINTLIGHT_
+		float3 DiffuseRGB = (Light.Diffuse * Lights[0].color.rgb);
+		float3 SpecularRGB = (Light.Specular * Gloss) * StaticSpecularColor.rgb;
+
 		float Attenuation = GetLightAttenuation(WorldLightVec, Lights[0].attenuation);
 		DiffuseRGB *= Attenuation;
 		SpecularRGB *= Attenuation;
@@ -281,29 +282,67 @@ PS2FB PS_StaticMesh(VS2PS Input)
 	#else
 		// Directional light + Lightmap etc
 		float3 Lightmap = GetLightmap(Input);
+
+		float AmbientOcclusion = Lightmap.b;
+		float Shadow = Lightmap.g;
+
 		#if _LIGHTMAP_ && _SHADOW_
-			Lightmap.g *= GetShadowFactor(SampleShadowMap, Input.ShadowTex);
+			Shadow *= GetShadowFactor(SampleShadowMap, Input.ShadowTex);
 		#endif
 
-		// We divide the normal by 5.0 to prevent complete darkness for surfaces facing away from the sun
-		float DotNL = saturate(dot(WorldNormal / 5.0, WorldLightDir));
-		float IDotNL = saturate((1.0 - DotNL) * 0.65);
+		// float3 LightColor = Lights[0].color.rgb;	
+		float3 LightColor = 1.0;//GetLightTransmittance(WorldPos, LightDir, 1.0);
+		// float3 LightDir = WorldLightDir;
+		float3 LightDir = FIXED_LIGHT_DIR;
+		// float3 AmbientColor = StaticSkyColor.rgb;
+
+		//float4 transmittance;
+		//float3 AmbientColor = GetAtmosphere(WorldPos, WorldNormal, INFINITY, LightDir, LightColor, transmittance, 1.0);
 
 		// We add ambient to get correct ambient for surfaces parallel to the sun
-		float3 Ambient = (StaticSkyColor * IDotNL) * Lightmap.b;
-		float3 BumpedDiffuse = DiffuseRGB + Ambient;
+		// float3 AmbientLight = AmbientColor * AmbientOcclusion;
 
-		DiffuseRGB = lerp(Ambient, BumpedDiffuse, Lightmap.g);
-		DiffuseRGB += (Lightmap.r * SinglePointColor);
-		SpecularRGB *= Lightmap.g;
-
-		OutputColor.rgb = CompositeLights(ColorMap.rgb * 2.0, 0.0, DiffuseRGB, SpecularRGB);
+		float3 ReflDir = reflect(-WorldViewDir, WorldNormal);
+		/*
+		float3 AmbientDir = normalize(lerp(float3(0, 1, 0), WorldNormal, 0.25));
+		float3 IndirectDiffuse = GetAtmosphere(WorldPos, AmbientDir, 1e10, LightDir, LightColor) * Fd_Lambert();
+		float3 IndirectSpecular = GetAtmosphere(WorldPos, ReflDir, 1e10, LightDir, LightColor);
+		*/
+		float3 Albedo = GammaToLinear(ColorMap.rgb) * 2.0; // Original shader does 2x for some reason, keep
+		float Roughness = RoughnessFromGlossAndExponent(Gloss, SpecularExponent);
+		float Metallic = 0.0;
+		// float3 IndirectDiffuse = FIXED_AMBIENT * AmbientOcclusion * AmbientAmountFromDir(WorldNormal);
+		// float3 IndirectSpecular = FIXED_AMBIENT * AmbientOcclusion * AmbientAmountFromDir(reflect(-WorldViewDir, WorldNormal));
+		float3 IndirectDiffuse = GetIndirectDiffuse(WorldPos, WorldNormal) * AmbientOcclusion;
+		float3 IndirectSpecular = GetIndirectSpecular(WorldPos, ReflDir, Roughness) * AmbientOcclusion;
+		SurfaceData Surface = GetSurfaceData(WorldPos, WorldNormal, WorldViewDir);
+		BRDFData BRDF = GetBBRDFData(Albedo, Roughness, Metallic); 
+		OutputColor.rgb = DirectPBS(Surface, BRDF, LightDir, LightColor, Shadow);
+		OutputColor.rgb += IndirectPBS(Surface, BRDF, IndirectDiffuse, IndirectSpecular);
 	#endif
+
+	#if !_POINTLIGHT_
+		//ApplyFog(OutputColor.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
+
+		/*
+		float FogDistance = distance(WorldPos, WorldSpaceCamPos.xyz);
+		float2 FogValues = FogDistance * FogRange.xy + FogRange.zw;
+		float Close = max(FogValues.y, FogColor.w);
+		float Far = pow(FogValues.x, 3.0);
+		return saturate(Close - Far);
+		*/
+
+		ApplyAtmosphere(OutputColor.rgb, WorldPos, WorldSpaceCamPos.xyz, WorldLightDir, Lights[0].color.rgb);
+	#endif
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
+	Output.Color.rgb = 0.5;
+
+	// OutputColor.rgb = Gloss;
 
 	Output.Color = float4(OutputColor.rgb, ColorMap.a);
-	#if !_POINTLIGHT_
-		ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
-	#endif
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

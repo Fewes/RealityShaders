@@ -292,6 +292,27 @@ PS2FB PS_SkinnedMesh(VS2PS Input)
 	OutputColor.rgb = CompositeLights(ColorMap.rgb, Ambient, DiffuseRGB, SpecularRGB);
 	OutputColor.a = ColorMap.a * Transparency.a;
 
+	float Gloss = NormalMap.a;
+
+	float3 LightColor = Lights[0].color.rgb;
+
+	// float3 AmbientLight = GetAtmosphere(WorldPos, WorldNormal, 1e10, LightDir, LightColor);
+	// float3 IndirectDiffuse = AmbientLight * Fd_Lambert();
+	// float3 IndirectSpecular = AmbientLight;
+
+	float3 Albedo = GammaToLinear(ColorMap.rgb) * 2.0; // Original shader does 2x for some reason, keep
+	float Roughness = RoughnessFromGlossAndExponent(Gloss, SpecularPower);
+	float Metallic = 0.0;
+
+	LightDir = FIXED_LIGHT_DIR;
+	float3 ReflDir = reflect(-ViewDir, WorldNormal);
+	float3 IndirectDiffuse = GetIndirectDiffuse(WorldPos, WorldNormal);
+	float3 IndirectSpecular = GetIndirectSpecular(WorldPos, ReflDir, Roughness);
+	SurfaceData Surface = GetSurfaceData(WorldPos, WorldNormal, ViewDir);
+	BRDFData BRDF = GetBBRDFData(Albedo, Roughness, Metallic);
+	OutputColor.rgb = DirectPBS(Surface, BRDF, LightDir, LightColor, TotalLights);
+	OutputColor.rgb += IndirectPBS(Surface, BRDF, IndirectDiffuse, IndirectSpecular);
+
 	// Thermals
 	if (IsTisActive())
 	{
@@ -302,10 +323,17 @@ PS2FB PS_SkinnedMesh(VS2PS Input)
 		#endif
 	}
 
-	Output.Color = OutputColor;
 	#if !_POINTLIGHT_
-		ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
+		// ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
+		ApplyAtmosphere(OutputColor.rgb, WorldPos, WorldSpaceCamPos.xyz, LightDir, LightColor);
 	#endif
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
+	// OutputColor.rgb = Gloss;
+
+	Output.Color = OutputColor;
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

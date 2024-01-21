@@ -335,6 +335,29 @@ PS2FB PS_BundledMesh(VS2PS Input)
 
 	float4 OutputColor = 1.0;
 	OutputColor.rgb = CompositeLights(ColorMap.rgb, Ambient, DiffuseRGB, SpecularRGB) * GI.rgb;
+	
+	// float3 AmbientLight = GetAtmosphere(WorldPos, WorldNormal, 1e10, LightDir, LightColor);
+
+	float3 Albedo = GammaToLinear(ColorMap.rgb);
+	float Roughness = RoughnessFromGlossAndExponent(Gloss, SpecularPower);
+	float Metallic = 0.0;
+
+	float3 ReflDir = reflect(-WorldViewDir, WorldNormal);
+	float3 LightColor = Lights[0].color.rgb;
+	// float3 LightDir = WorldLightDir;
+	float3 LightDir = FIXED_LIGHT_DIR;
+	float3 IndirectDiffuse = GetIndirectDiffuse(WorldPos, WorldNormal);
+	float3 IndirectSpecular = GetIndirectSpecular(WorldPos, ReflDir, Roughness);
+	/*
+	float3 AmbientDir = normalize(lerp(float3(0, 1, 0), WorldNormal, 0.25));
+	float3 ReflDir = reflect(-WorldViewDir, WorldNormal);
+	float3 IndirectDiffuse = GetAtmosphere(WorldPos, AmbientDir, 1e10, LightDir, LightColor) * Fd_Lambert();
+	float3 IndirectSpecular = GetAtmosphere(WorldPos, ReflDir, 1e10, LightDir, LightColor);
+	*/
+	SurfaceData Surface = GetSurfaceData(WorldPos, WorldNormal, WorldViewDir);
+	BRDFData BRDF = GetBBRDFData(Albedo, Roughness, Metallic);
+	OutputColor.rgb = DirectPBS(Surface, BRDF, LightDir, LightColor, TotalLights);
+	OutputColor.rgb += IndirectPBS(Surface, BRDF, IndirectDiffuse, IndirectSpecular);
 
 	/*
 		Calculate fogging and other occluders
@@ -369,6 +392,18 @@ PS2FB PS_BundledMesh(VS2PS Input)
 		#endif
 	}
 
+	#if !_POINTLIGHT_
+		// ApplyFog(OutputColor.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
+		ApplyAtmosphere(OutputColor.rgb, WorldPos, WorldSpaceCamPos.xyz, Lights[0].dir, Lights[0].color.rgb);
+	#endif
+
+	/*
+		Tonemap + gamma
+	*/
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
 	/*
 		Calculate alpha transparency
 	*/
@@ -395,11 +430,10 @@ PS2FB PS_BundledMesh(VS2PS Input)
 		Output.Color.a *= Attenuation;
 	#endif
 
+	// OutputColor.rgb = Gloss;
+
 	Output.Color.rgb = OutputColor.rgb;
 	Output.Color.a *= Transparency.a;
-	#if !_POINTLIGHT_
-		ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
-	#endif
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

@@ -3,9 +3,14 @@
 	Include header files
 */
 
+#define APPLY_SUN_DISC
+#define SKIP_ATMOSPHERE_FOG
+
 #include "shaders/shared/RealityPixel.fxh"
+#include "shaders/RaCommon.fxh"
 #if !defined(INCLUDED_HEADERS)
 	#include "shared/RealityPixel.fxh"
+	#include "shaders/RaCommon.fxh"
 #endif
 
 /*
@@ -25,6 +30,13 @@ uniform float2 _CloudLerpFactors : CLOUDLERPFACTORS;
 
 uniform float _LightingBlend : LIGHTINGBLEND;
 uniform float3 _LightingColor : LIGHTINGCOLOR;
+
+uniform float4 WorldSpaceCamPos; // Doesn't work :(
+
+string GlobalParameters[] =
+{
+	"WorldSpaceCamPos" // DOESN'T WORK
+};
 
 #define CREATE_SAMPLER(SAMPLER_NAME, TEXTURE, ADDRESS) \
 	sampler SAMPLER_NAME = sampler_state \
@@ -71,11 +83,6 @@ float GetFadeOut(float3 Pos)
 	float Dist = length(Pos);
 	float FadeOut = 1.0 - saturate((Dist - _FadeOutDist.x) / _FadeOutDist.y);
 	return saturate(FadeOut * (Pos.y > 0.0));
-}
-
-bool IsTisActive()
-{
-	return _UnderwaterFog.r == 0;
 }
 
 float4 ApplyTis(in out float4 color)
@@ -128,7 +135,7 @@ PS2FB PS_SkyDome_UnderWater(VS2PS_SkyDome Input)
 	return Output;
 }
 
-PS2FB PS_SkyDome(VS2PS_SkyDome Input)
+PS2FB PS_SkyDome(VS2PS_SkyDome Input) // SAAREMAA
 {
 	PS2FB Output = (PS2FB)0.0;
 
@@ -138,11 +145,19 @@ PS2FB PS_SkyDome(VS2PS_SkyDome Input)
 
 	Output.Color = float4(lerp(SkyDome.rgb, Cloud1.rgb, Cloud1.a), 1.0);
 
+	Output.Color.rgb = 0;
+	float3 rayDir = normalize(Input.Pos.xyz);
+	float3 worldPos = WorldSpaceCamPos.xyz + rayDir * PLANET_RADIUS;
+	ApplyAtmosphere(Output.Color.rgb, worldPos, WorldSpaceCamPos.xyz, 0, 0);
+
 	// If thermals make it dark
 	if (IsTisActive())
 	{
 		Output.Color = ApplyTis(Output.Color);
 	}
+
+	Output.Color.rgb = Tonemap(Output.Color.rgb);
+	Output.Color.rgb = LinearToGamma(Output.Color.rgb);
 
 	return Output;
 }
@@ -158,11 +173,21 @@ PS2FB PS_SkyDome_Lit(VS2PS_SkyDome Input)
 
 	Output.Color = float4(lerp(SkyDome.rgb, Cloud1.rgb, Cloud1.a), 1.0);
 
+	Output.Color.rgb = 0;
+	float3 rayDir = normalize(Input.Pos.xyz);
+	float3 worldPos = WorldSpaceCamPos.xyz + rayDir * PLANET_RADIUS;
+	ApplyAtmosphere(Output.Color.rgb, worldPos, WorldSpaceCamPos.xyz, 0, 0);
+
 	// If thermals make it dark
 	if (IsTisActive())
 	{
 		Output.Color = ApplyTis(Output.Color);
 	}
+
+	Output.Color.rgb = Tonemap(Output.Color.rgb);
+	Output.Color.rgb = LinearToGamma(Output.Color.rgb);
+
+	Output.Color.rgb = float3(1, 0, 1);
 
 	return Output;
 }
@@ -205,11 +230,21 @@ PS2FB PS_SkyDome_DualClouds(VS2PS_DualClouds Input)
 
 	Output.Color = lerp(SkyDome, Temp, Temp.a);
 
+	Output.Color.rgb = 0;
+	float3 rayDir = normalize(Input.Pos.xyz);
+	float3 worldPos = WorldSpaceCamPos.xyz + rayDir * PLANET_RADIUS;
+	ApplyAtmosphere(Output.Color.rgb, worldPos, WorldSpaceCamPos.xyz, 0, 0);
+
 	// If thermals make it dark
 	if (IsTisActive())
 	{
 		Output.Color = ApplyTis(Output.Color);
 	}
+
+	Output.Color.rgb = Tonemap(Output.Color.rgb);
+	Output.Color.rgb = LinearToGamma(Output.Color.rgb);
+
+	Output.Color.rgb = float3(0, 0, 1);
 
 	return Output;
 }
@@ -238,17 +273,25 @@ VS2PS_NoClouds VS_SkyDome_NoClouds(APP2VS_NoClouds Input)
 	return Output;
 }
 
-PS2FB PS_SkyDome_NoClouds(VS2PS_NoClouds Input)
+PS2FB PS_SkyDome_NoClouds(VS2PS_NoClouds Input) // BEIRUT
 {
 	PS2FB Output = (PS2FB)0.0;
 
 	Output.Color = tex2D(SampleTex0, Input.Tex0);
+
+	Output.Color.rgb = 0;
+	float3 rayDir = normalize(Input.Pos.xyz);
+	float3 worldPos = WorldSpaceCamPos.xyz + rayDir * PLANET_RADIUS;
+	ApplyAtmosphere(Output.Color.rgb, worldPos, WorldSpaceCamPos.xyz, 0, 0);
 
 	// If thermals make it dark
 	if (IsTisActive())
 	{
 		Output.Color = ApplyTis(Output.Color);
 	}
+
+	Output.Color.rgb = Tonemap(Output.Color.rgb);
+	Output.Color.rgb = LinearToGamma(Output.Color.rgb);
 
 	return Output;
 }
@@ -262,11 +305,21 @@ PS2FB PS_SkyDome_NoClouds_Lit(VS2PS_NoClouds Input)
 
 	Output.Color = SkyDome;
 
+	Output.Color.rgb = 0;
+	float3 rayDir = normalize(Input.Pos.xyz);
+	float3 worldPos = WorldSpaceCamPos.xyz + rayDir * PLANET_RADIUS;
+	ApplyAtmosphere(Output.Color.rgb, worldPos, WorldSpaceCamPos.xyz, 0, 0);
+
 	// If thermals make it dark
 	if (IsTisActive())
 	{
 		Output.Color = ApplyTis(Output.Color);
 	}
+
+	Output.Color.rgb = Tonemap(Output.Color.rgb);
+	Output.Color.rgb = LinearToGamma(Output.Color.rgb);
+
+	Output.Color.rgb = float3(1, 0, 0);
 
 	return Output;
 }

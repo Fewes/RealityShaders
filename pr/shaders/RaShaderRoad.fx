@@ -154,10 +154,14 @@ PS2FB PS_Road(VS2PS Input)
 	float4 AccumLights = tex2Dproj(SampleLightMap, Input.LightTex);
 	float3 Light = ((TerrainSunColor * (AccumLights.a * 2.0)) + AccumLights.rgb) * 2.0;
 
-	float4 Diffuse = tex2D(SampleDiffuseMap, Input.Tex0.xy);
+	float4 ColorMap = tex2D(SampleDiffuseMap, Input.Tex0.xy);
+	float4 Diffuse = ColorMap;
+	Diffuse.rgb = GammaToLinear(Diffuse.rgb);
 	#if defined(USE_DETAIL)
 		float4 Detail = tex2D(SampleDetailMap, Input.Tex0.zw);
 		Diffuse *= Detail;
+	#else
+		float4 Detail = 1.0;
 	#endif
 
 	// On thermals no shadows
@@ -178,8 +182,41 @@ PS2FB PS_Road(VS2PS Input)
 		Diffuse.a *= ZFade;
 	#endif
 
-	Output.Color = Diffuse;
-	ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
+	float4 OutputColor = Diffuse;
+
+	// ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
+
+	float3 Albedo = GammaToLinear(ColorMap.rgb) * (Detail.rgb * 2.0);
+	float Roughness = 0.8;
+	float Metallic = 0.0;
+	float AmbientOcclusion = AccumLights.r;
+
+	float3 WorldNormal = float3(0, 1, 0); // Bleh
+	float3 WorldViewDir = normalize(WorldSpaceCamPos.xyz - WorldPos.xyz);
+	float3 ReflDir = reflect(-WorldViewDir, WorldNormal);
+
+	float3 LightColor = 1.0; // TEMP
+	float3 LightDir = FIXED_LIGHT_DIR;//_SunDirection.rgb;
+	float3 AmbientColor = AccumLights.rgb;//GetAtmosphere(WorldPos, WorldNormal, 1e10, LightDir, LightColor);
+	float Shadow = AccumLights.a * 2.0;
+	// float3 IndirectDiffuse = AmbientColor;
+	// float3 IndirectSpecular = AmbientColor;
+	float3 IndirectDiffuse = GetIndirectDiffuse(WorldPos, WorldNormal) * AmbientOcclusion;
+	float3 IndirectSpecular = GetIndirectSpecular(WorldPos, ReflDir, Roughness) * AmbientOcclusion;
+	SurfaceData Surface = GetSurfaceData(WorldPos.xyz, WorldNormal, WorldViewDir);
+	
+	BRDFData BRDF = GetBBRDFData(Albedo, Roughness, Metallic);
+	OutputColor.rgb = DirectPBS(Surface, BRDF, LightDir, LightColor, Shadow); 
+	OutputColor.rgb += IndirectPBS(Surface, BRDF, IndirectDiffuse, IndirectSpecular);
+
+	ApplyAtmosphere(OutputColor.rgb, WorldPos.xyz, WorldSpaceCamPos.xyz, FIXED_LIGHT_DIR, FIXED_LIGHT_COLOR);
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
+	// OutputColor.rgb = float3(1, 0, 0);
+
+	Output.Color = OutputColor;
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

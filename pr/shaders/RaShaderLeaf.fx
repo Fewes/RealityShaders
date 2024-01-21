@@ -243,9 +243,12 @@ PS2FB PS_Leaf(VS2PS Input)
 		float4 Shadow = 1.0;
 	#endif
 
-	float3 LightColor = (Lights[0].color * LodScale) * Shadow;
+	// float3 LightColor = (Lights[0].color * LodScale) * Shadow;
+	float3 LightColor = (1.0 * LodScale) * Shadow; // TEMP
 	float3 Ambient = OverGrowthAmbient.rgb * LodScale;
 	float3 Diffuse = (HalfNL * LodScale) * LightColor;
+
+	DiffuseMap.rgb = GammaToLinear(DiffuseMap.rgb);
 
 	float4 OutputColor = 0.0;
 	OutputColor.rgb = CompositeLights(DiffuseMap.rgb, Ambient, Diffuse, 0.0);
@@ -254,15 +257,20 @@ PS2FB PS_Leaf(VS2PS Input)
 		OutputColor.a *= (DiffuseMap.a * 2.0);
 	#endif
 
-	Output.Color = OutputColor;
 	float FogValue = GetFogValue(WorldPos, WorldSpaceCamPos.xyz);
 	#if _POINTLIGHT_
 		float3 WorldLightVec = GetWorldLightPos(Lights[0].pos.xyz) - WorldPos;
-		Output.Color.rgb *= GetLightAttenuation(WorldLightVec, Lights[0].attenuation);
-		Output.Color.rgb *= FogValue;
+		OutputColor.rgb *= GetLightAttenuation(WorldLightVec, Lights[0].attenuation);
+		OutputColor.rgb *= FogValue;
 	#else
-		ApplyFog(Output.Color.rgb, FogValue);
+		// ApplyFog(OutputColor.rgb, FogValue);
+		ApplyAtmosphere(OutputColor.rgb, WorldPos, WorldSpaceCamPos.xyz, Lights[0].dir, Lights[0].color.rgb);
 	#endif
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
+	Output.Color = OutputColor;
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

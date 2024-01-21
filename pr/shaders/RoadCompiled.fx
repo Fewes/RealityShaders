@@ -111,8 +111,8 @@ PS2FB PS_RoadCompiled(VS2PS Input)
 {
 	PS2FB Output = (PS2FB)0.0;
 
-	float3 LocalPos = Input.Pos.xyz;
-	float ZFade = GetRoadZFade(LocalPos.xyz, _LocalEyePos.xyz, _FadeoutValues);
+	float3 WorldPos = Input.Pos.xyz;
+	float ZFade = GetRoadZFade(WorldPos.xyz, _LocalEyePos.xyz, _FadeoutValues);
 
 	float4 AccumLights = tex2Dproj(SampleLightMap, Input.LightTex);
 	float3 TerrainSunColor = _SunColor.rgb * 2.0;
@@ -122,7 +122,7 @@ PS2FB PS_RoadCompiled(VS2PS Input)
 	float4 Detail1 = tex2D(SampleDetailMap1, Input.Tex0.zw * 0.1);
 
 	float4 OutputColor = 0.0;
-	OutputColor.rgb = lerp(Detail1, Detail0, _TexBlendFactor);
+	OutputColor.rgb = lerp(Detail1.rgb, Detail0.rgb, _TexBlendFactor);
 	OutputColor.a = Detail0.a * saturate(ZFade * Input.Alpha);
 
 	// On thermals no shadows
@@ -137,8 +137,37 @@ PS2FB PS_RoadCompiled(VS2PS Input)
 		OutputColor.rgb *= TerrainLights;
 	}
 
+	float3 Albedo = GammaToLinear(lerp(Detail1.rgb, Detail0.rgb, _TexBlendFactor));
+	float Roughness = 0.8;
+	float Metallic = 0.0;
+	float AmbientOcclusion = AccumLights.r;
+
+	float3 WorldNormal = float3(0, 1, 0); // Bleh
+	float3 WorldViewDir = normalize(_LocalEyePos.xyz - WorldPos.xyz);
+	float3 ReflDir = reflect(-WorldViewDir, WorldNormal);
+
+	float3 LightColor = 1.0; // TEMP
+	float3 LightDir = FIXED_LIGHT_DIR;//_SunDirection.rgb;
+	float3 AmbientColor = AccumLights.rgb;//GetAtmosphere(WorldPos, WorldNormal, 1e10, LightDir, LightColor);
+	float Shadow = AccumLights.a * 2.0;
+	float3 IndirectDiffuse = GetIndirectDiffuse(WorldPos, WorldNormal) * AmbientOcclusion;
+	float3 IndirectSpecular = GetIndirectSpecular(WorldPos, ReflDir, Roughness) * AmbientOcclusion;
+	
+	SurfaceData Surface = GetSurfaceData(WorldPos.xyz, WorldNormal, WorldViewDir);
+	BRDFData BRDF = GetBBRDFData(Albedo, Roughness, Metallic);
+	OutputColor.rgb = DirectPBS(Surface, BRDF, LightDir, LightColor, Shadow); 
+	OutputColor.rgb += IndirectPBS(Surface, BRDF, IndirectDiffuse, IndirectSpecular);
+
+	ApplyAtmosphere(OutputColor.rgb, WorldPos.xyz, _LocalEyePos.xyz, FIXED_LIGHT_DIR, FIXED_LIGHT_COLOR);
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
+	// OutputColor.rgb = float3(0, 1, 0);
+
+	// ApplyFog(OutputColor.rgb, GetFogValue(WorldPos, _LocalEyePos.xyz));
+
 	Output.Color = OutputColor;
-	ApplyFog(Output.Color.rgb, GetFogValue(LocalPos, _LocalEyePos.xyz));
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

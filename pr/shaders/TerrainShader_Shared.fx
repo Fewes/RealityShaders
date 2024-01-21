@@ -38,7 +38,8 @@ PS2FB PS_Shared_ZFillLightMap_1(VS2PS_Shared_ZFillLightMap Input)
 {
 	PS2FB Output = (PS2FB)0.0;
 	float4 LightMap = tex2D(SampleTex0_Clamp, Input.Tex0.xy);
-	Output.Color = saturate(float4(_GIColor.rgb * LightMap.bbb, LightMap.g));
+	// Output.Color = saturate(float4(_GIColor.rgb * LightMap.bbb, LightMap.g));
+	Output.Color = saturate(float4(LightMap.bbb, LightMap.g));
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Tex0.z);
 	#endif
@@ -67,7 +68,7 @@ float GetLighting(float3 WorldPos, float3 WorldNormal)
 
 	// Calculate lighting
 	float Attenuation = GetLightAttenuation(WorldLightVec, _PointLight.attSqrInv);
-	float3 HalfNL = GetHalfNL(WorldNormal, WorldLightDir);
+	float HalfNL = GetHalfNL(WorldNormal, WorldLightDir);
 
 	return HalfNL * Attenuation;
 }
@@ -255,8 +256,15 @@ PS2FB PS_Shared_LowDetail(VS2PS_Shared_LowDetail Input)
 		OutputColor = TerrainLights;
 	#endif
 
+	
+	//ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, _CameraPos.xyz));
+
+	ApplyAtmosphere(OutputColor.rgb, WorldPos.xyz, _CameraPos.xyz, _SunDirection.rgb, _SunColor.rgb);
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
 	Output.Color = OutputColor;
-	ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, _CameraPos.xyz));
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);
@@ -391,8 +399,14 @@ PS2FB PS_Shared_UnderWater(VS2PS_Shared_UnderWater Input)
 	float3 OutputColor = _TerrainWaterColor.rgb;
 	float WaterLerp = saturate((WorldPos.y / -3.0) + _WaterHeight);
 
+	// ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, _CameraPos.xyz));
+
+	ApplyAtmosphere(OutputColor.rgb, WorldPos.xyz, _CameraPos.xyz, _SunDirection.rgb, _SunColor.rgb);
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
 	Output.Color = float4(OutputColor, WaterLerp);
-	ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, _CameraPos.xyz));
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);
@@ -486,6 +500,8 @@ PS2FB PS_Shared_ST_Normal(VS2PS_Shared_ST_Normal Input)
 	float4 XPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, ST.XPlane) * 2.0;
 	float4 ZPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, ST.ZPlane) * 2.0;
 
+	ColorMap.rgb = GammaToLinear(ColorMap.rgb);
+
 	// If thermals assume gray color
 	if (IsTisActive())
 	{
@@ -506,8 +522,15 @@ PS2FB PS_Shared_ST_Normal(VS2PS_Shared_ST_Normal Input)
 		OutputColor.rb = 0.0;
 	}
 
+	// OutputColor.rgb = float3(1, 0, 0);
+
+	// ApplyFog(OutputColor.rgb, GetFogValue(WorldPos, _CameraPos.xyz));
+	ApplyAtmosphere(OutputColor.rgb, WorldPos, _CameraPos.xyz, _SunDirection.rgb, _SunColor.rgb);
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
 	Output.Color = OutputColor;
-	ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, _CameraPos.xyz));
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

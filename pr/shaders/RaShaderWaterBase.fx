@@ -230,7 +230,7 @@ PS2FB PS_Water(in VS2PS Input)
 	float3 Reflection = normalize(reflect(-WorldViewDir, TangentNormal));
 	float3 EnvColor = texCUBE(SampleCubeMap, Reflection);
 	float LerpMod = -(1.0 - saturate(Shadow + SHADOW_FACTOR));
-	float3 WaterLerp = lerp(_WaterColor.rgb, EnvColor, COLOR_ENVMAP_RATIO + LerpMod);
+	float3 WaterLerp = lerp(GammaToLinear(_WaterColor.rgb), EnvColor, COLOR_ENVMAP_RATIO + LerpMod);
 
 	// Composite light on water color
 	float3 LightColors = SpecularColor.rgb * (SpecularColor.a * Shadow);
@@ -247,8 +247,14 @@ PS2FB PS_Water(in VS2PS Input)
 	float Fresnel = ComputeFresnelFactor(TangentNormal, WorldViewDir, POW_TRANSPARENCY);
 	OutputColor.a = saturate((LightMap.r * Fresnel) + _WaterColor.a);
 
+	// ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
+	// ApplyAtmosphere(Output.Color.rgb, WorldPos, WorldSpaceCamPos.xyz, _SunDirection, _SunColor);
+	ApplyAtmosphere(OutputColor.rgb, WorldPos, WorldSpaceCamPos.xyz, Lights[0].dir, Lights[0].color.rgb);
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
 	Output.Color = OutputColor;
-	ApplyFog(Output.Color.rgb, GetFogValue(WorldPos, WorldSpaceCamPos.xyz));
 
 	#if defined(LOG_DEPTH)
 		Output.Depth = ApplyLogarithmicDepth(Input.Pos.w);

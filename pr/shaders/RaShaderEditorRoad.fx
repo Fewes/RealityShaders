@@ -155,6 +155,8 @@ PS2FB PS_Editor_Road(VS2PS Input)
 	#endif
 	OutputColor.a *= GetRoadZFade(Input.Pos.xyz, WorldSpaceCamPos.xyz, RoadFadeOut);
 
+	OutputColor.rgb = float3(0, 0, 1);
+
 	Output.Color = OutputColor;
 	ApplyFog(Output.Color.rgb, GetFogValue(Input.Pos.xyz, WorldSpaceCamPos.xyz));
 

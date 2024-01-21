@@ -125,14 +125,14 @@ PS2FB FullDetail_Hi(VS2PS_FullDetail_Hi Input, uniform bool UseMounten, uniform 
 	#if defined(LIGHTONLY)
 		float3 OutputColor = TerrainLights;
 	#else
-		float3 ColorMap = tex2D(SampleTex0_Clamp, Input.Tex1.xy);
+		float3 ColorMap = tex2D(SampleTex0_Clamp, Input.Tex1.xy).rgb;
 		float4 LowComponent = tex2D(SampleTex5_Clamp, Input.Tex1.zw);
 		float4 YPlaneDetailmap = tex2D(SampleTex3_Wrap, FD.NearYPlane);
 		float4 XPlaneDetailmap = GetProceduralTiles(SampleTex6_Wrap, FD.NearXPlane);
 		float4 ZPlaneDetailmap = GetProceduralTiles(SampleTex6_Wrap, FD.NearZPlane);
-		float3 YPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, FD.FarYPlane);
-		float3 XPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, FD.FarXPlane);
-		float3 ZPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, FD.FarZPlane);
+		float3 YPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, FD.FarYPlane).rgb;
+		float3 XPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, FD.FarXPlane).rgb;
+		float3 ZPlaneLowDetailmap = GetProceduralTiles(SampleTex4_Wrap, FD.FarZPlane).rgb;
 		float EnvMapScale = YPlaneDetailmap.a;
 
 		// If thermals assume no shadows and gray color
@@ -170,13 +170,39 @@ PS2FB FullDetail_Hi(VS2PS_FullDetail_Hi Input, uniform bool UseMounten, uniform 
 		if (UseEnvMap)
 		{
 			float3 Reflection = reflect(normalize(WorldPos.xyz - _CameraPos.xyz), float3(0.0, 1.0, 0.0));
-			float3 EnvMapColor = texCUBE(SamplerTex6_Cube, Reflection);
+			float3 EnvMapColor = texCUBE(SamplerTex6_Cube, Reflection).rgb;
 			OutputColor = lerp(OutputColor, EnvMapColor, EnvMapScale * (1.0 - LerpValue));
 		}
+
+		float3 Albedo = GammaToLinear(ColorMap.rgb) * (OutputDetail.rgb * 2.0);
+		float Roughness = 0.9;
+		float Metallic = 0.0;
+		float AmbientOcclusion = AccumLights.r;
+		float3 WorldViewDir = normalize(_CameraPos.xyz - WorldPos.xyz);
+		float3 ReflDir = reflect(-WorldViewDir, WorldNormal);
+		// float3 LightColor = _SunColor.rgb * 2.0; // x2 above for some reason, match here...
+		float3 LightColor = 1.0; // TEMP
+		float3 LightDir = FIXED_LIGHT_DIR;//_SunDirection.rgb;
+		// float3 AmbientColor = FIXED_AMBIENT * AccumLights.r;//GetAtmosphere(WorldPos, WorldNormal, 1e10, LightDir, LightColor);
+		float Shadow = AccumLights.a * 2.0; // Same here...
+		float3 IndirectDiffuse = GetIndirectDiffuse(WorldPos.xyz, WorldNormal) * AmbientOcclusion;
+		float3 IndirectSpecular = GetIndirectSpecular(WorldPos.xyz, ReflDir, Roughness) * AmbientOcclusion;
+		SurfaceData Surface = GetSurfaceData(WorldPos.xyz, WorldNormal, WorldViewDir);
+		BRDFData BRDF = GetBBRDFData(Albedo, Roughness, Metallic);
+		OutputColor.rgb = DirectPBS(Surface, BRDF, LightDir, LightColor, Shadow); 
+		OutputColor.rgb += IndirectPBS(Surface, BRDF, IndirectDiffuse, IndirectSpecular);
 	#endif
 
+	// OutputColor.rgb = float3(0, 1, 0); // Debug terrain type
+
+	// ApplyFog(OutputColor.rgb, GetFogValue(WorldPos.xyz, _CameraPos.xyz));
+	// float Fade = smoothstep(0.99, 1.0, length(WorldPos - _CameraPos.xyz) * FogRangke.x);
+	ApplyAtmosphere(OutputColor.rgb, WorldPos.xyz, _CameraPos.xyz, _SunDirection, _SunColor);
+
+	OutputColor.rgb = Tonemap(OutputColor.rgb);
+	OutputColor.rgb = LinearToGamma(OutputColor.rgb);
+
 	Output.Color = float4(OutputColor, ChartContribution);
-	ApplyFog(Output.Color.rgb, GetFogValue(WorldPos.xyz, _CameraPos.xyz));
 	Output.Color.rgb *= ChartContribution;
 
 	#if defined(LOG_DEPTH)
