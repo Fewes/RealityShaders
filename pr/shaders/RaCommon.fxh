@@ -146,12 +146,12 @@
 	{
 		// Basic
 		// return 1.0 - exp(-Color);
-		return 1.0 - exp2(-Color * 2.0);
+		// return 1.0 - exp2(-Color * 2.0);
 		// return Uncharted2ToneMapping(Color);
 
 		// return exp(-1.0 / (2.72 * Color + 0.15));
 
-		/*
+		
 		// Narkowicz 2015, "ACES Filmic Tone Mapping Curve"
 		const float a = 2.51;
 		const float b = 0.03;
@@ -159,7 +159,7 @@
 		const float d = 0.59;
 		const float e = 0.14;
 		return (Color * (a * Color + b)) / (Color * (c * Color + d) + e);
-		*/
+		
 	}
 
 	float3 GammaToLinear(float3 Color)
